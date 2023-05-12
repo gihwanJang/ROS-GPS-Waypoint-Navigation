@@ -11,6 +11,7 @@
 
 class Router {
 public:
+    Router(){}
     Router(const std::string&api_key, const std::vector<double>&start, const std::vector<double>&end);
     void viewRoute() const;
     std::vector<std::vector<double>> getCoordinates();
@@ -61,6 +62,8 @@ std::string Router::send_http_request() const{
     url += "&start=" + std::to_string(start_[0]) + "," + std::to_string(start_[1]);
     url += "&end=" + std::to_string(end_[0]) + "," + std::to_string(end_[1]);
     url += "&geometry_format=geojson";
+
+    //std::cout << url << "\n";
 
     CURL *curl = curl_easy_init();
     std::string response;
