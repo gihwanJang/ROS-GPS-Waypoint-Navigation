@@ -19,6 +19,8 @@ include_directories(
 )
 
 add_executable(angle src/driving_angle.cpp)
-
 target_link_libraries(angle ${catkin_LIBRARIES} -lcurl)
+
+add_executable(nav src/navigation.cpp)
+target_link_libraries(nav ${catkin_LIBRARIES})
 

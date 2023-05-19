@@ -1,0 +1,4 @@
+<launch>
+    <node name="nav" pkg="gps_waypoint_nav"  type="nav" output="screen">
+    </node>
+</launch>

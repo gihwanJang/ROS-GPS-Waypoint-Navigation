@@ -9,7 +9,7 @@
 #include <sensor_msgs/NavSatFix.h>
 
 #define pi 3.14159265358979323846
-#define earth_radius 6371.0 // km
+#define earth_radius 637.10
 
 // gps dataType
 struct GPS{
@@ -103,8 +103,8 @@ double angle_calculation(GPS&prevPoint, GPS&currPoint, GPS&nextPoint) {
         return 0;
 
     Vector2 prev(prevPoint.latitude, prevPoint.longitude);
-    Vector2 curr(prevPoint.latitude, prevPoint.longitude);
-    Vector2 next(prevPoint.latitude, prevPoint.longitude);
+    Vector2 curr(currPoint.latitude, currPoint.longitude);
+    Vector2 next(nextPoint.latitude, nextPoint.longitude);
     // 벡터 a,b와 벡터 a,c를 구하기
     double pToc_x = curr.x - prev.x;
     double pToc_y = curr.y - prev.y;
@@ -117,6 +117,10 @@ double angle_calculation(GPS&prevPoint, GPS&currPoint, GPS&nextPoint) {
     double dot = pToc_x * cTon_x + pToc_y * cTon_y;
     // 라디안으로 각도 계산
     double radian = acos(dot / (pToc_d * cTon_d));
+    // 각도를 도로 변환하여 0부터 360도 사이로 조정
+    double degree = radian * 180 / pi;
+    if (pToc_x * cTon_y - pToc_y * cTon_x < 0)
+        degree = 360 - degree;
     // 각도를 도로 변환
     return radian * 180 / pi;
 }
@@ -125,6 +129,7 @@ int main(int argc, char **argv) {
     // create node
     ros::init(argc, argv, "driving_angle_pub");
     ros::NodeHandle nh;
+    std_msgs::Float64 msg;
     
     int nextPointIdx = 0;
 
@@ -154,6 +159,7 @@ int main(int argc, char **argv) {
         // init Router
         if(nextPoint.latitude < 0 && nextPoint.longitude < 0 && currPoint.latitude > 0 && currPoint.longitude > 0){
             router = setRouter({currPoint.longitude, currPoint.latitude}, {127.2800, 36.7652});
+	    //router = setRouter({currPoint.longitude, currPoint.latitude}, {127.2816, 36.7663});
 
             nextPoint.latitude = router.getCoordinates()[0][1];
             nextPoint.longitude = router.getCoordinates()[0][0];
@@ -166,14 +172,13 @@ int main(int argc, char **argv) {
         if(nextPoint.latitude > 0 && nextPoint.longitude > 0){
             setNextGpsPoint(router, currPoint, nextPoint, nextPointIdx);
 
-            std_msgs::Float64 msg;
             msg.data = angle_calculation(prevPoint, currPoint, nextPoint);
 
             double_pub.publish(msg);
         }
 
         ROS_INFO("distance : %lf", haversine(currPoint.latitude, currPoint.longitude, nextPoint.latitude, nextPoint.longitude));
-        ROS_INFO("angle : %lf\n", angle_calculation(prevPoint, currPoint, nextPoint));
+        ROS_INFO("angle : %lf\n", msg.data);
 
         if(haversine(currPoint.latitude, currPoint.longitude, prevPoint.latitude, prevPoint.longitude) >= 0.5)
             prevPoint = currPoint;
