@@ -9,7 +9,7 @@
 #include <sensor_msgs/NavSatFix.h>
 
 #define pi 3.14159265358979323846
-#define earth_radius 637.10
+#define earth_radius 6371.0
 
 // gps dataType
 struct GPS{
@@ -53,6 +53,8 @@ void viewRoute(std::vector<std::vector<double>> coordinates) {
 
 // subscribe current gps
 GPS get_latitude_longitude(const sensor_msgs::NavSatFix::ConstPtr& msg) {
+    if(std::isnan(msg->latitude))
+        return GPS(-1,-1);
     return GPS(msg->latitude, msg->longitude);
 }
 
@@ -80,8 +82,8 @@ double haversine(double lat1, double lon1, double lat2, double lon2) {
 void setNextGpsPoint(Router&router, const GPS&currPoint, GPS&nextPoint, int&nextPointIdx) {
     double distance = haversine(currPoint.latitude, currPoint.longitude, nextPoint.latitude, nextPoint.longitude);
 
-    // inside 1m update next rout path
-    if(distance <= 1){
+    // inside 12.0m update next rout path
+    if(distance <= 12){
         // arrive goal
         if(++nextPointIdx == router.getCoordinates().size()-1){
             nextPoint.latitude = -1;
@@ -122,7 +124,7 @@ double angle_calculation(GPS&prevPoint, GPS&currPoint, GPS&nextPoint) {
     if (pToc_x * cTon_y - pToc_y * cTon_x < 0)
         degree = 360 - degree;
     // 각도를 도로 변환
-    return radian * 180 / pi;
+    return degree;
 }
 
 int main(int argc, char **argv) {
@@ -158,8 +160,9 @@ int main(int argc, char **argv) {
 
         // init Router
         if(nextPoint.latitude < 0 && nextPoint.longitude < 0 && currPoint.latitude > 0 && currPoint.longitude > 0){
-            router = setRouter({currPoint.longitude, currPoint.latitude}, {127.2800, 36.7652});
-	    //router = setRouter({currPoint.longitude, currPoint.latitude}, {127.2816, 36.7663});
+            router = setRouter({currPoint.longitude, currPoint.latitude}, {std::stod(argv[1]), std::stod(argv[2])});
+            //router = setRouter({currPoint.longitude, currPoint.latitude}, {127.2800, 36.7652});
+	        //router = setRouter({currPoint.longitude, currPoint.latitude}, {127.2816, 36.7663});
 
             nextPoint.latitude = router.getCoordinates()[0][1];
             nextPoint.longitude = router.getCoordinates()[0][0];
@@ -169,6 +172,7 @@ int main(int argc, char **argv) {
         }
 
         // if we have next point continue
+        /*
         if(nextPoint.latitude > 0 && nextPoint.longitude > 0){
             setNextGpsPoint(router, currPoint, nextPoint, nextPointIdx);
 
@@ -176,11 +180,26 @@ int main(int argc, char **argv) {
 
             double_pub.publish(msg);
         }
+        */
+        
+        if(nextPoint.latitude > 0 && nextPoint.longitude > 0){
+            setNextGpsPoint(router, currPoint, nextPoint, nextPointIdx);
+
+            if(nextPointIdx < 2){
+                msg.data = 0;
+            }
+            else{
+                GPS nextPointBaseRouter(router.getCoordinates()[nextPointIdx-1][0], router.getCoordinates()[nextPointIdx-1][1]);
+                msg.data = angle_calculation(nextPointBaseRouter, currPoint, nextPoint);
+            }
+
+            double_pub.publish(msg);
+        }
 
         ROS_INFO("distance : %lf", haversine(currPoint.latitude, currPoint.longitude, nextPoint.latitude, nextPoint.longitude));
-        ROS_INFO("angle : %lf\n", msg.data);
+        ROS_INFO("angle : %lf\n", msg.data);      
 
-        if(haversine(currPoint.latitude, currPoint.longitude, prevPoint.latitude, prevPoint.longitude) >= 0.5)
+        if(haversine(currPoint.latitude, currPoint.longitude, prevPoint.latitude, prevPoint.longitude) >= 7.5)
             prevPoint = currPoint;
         
         rate.sleep();

@@ -1,4 +1,4 @@
 <launch>
-    <node name="angle" pkg="gps_waypoint_nav"  type="angle" output="screen">
+    <node name="angle" pkg="gps_waypoint_nav"  type="angle" args="127.2816 36.7663" output="screen">
     </node>
-</launch>
+</launch> 

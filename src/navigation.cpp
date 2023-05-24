@@ -1,4 +1,5 @@
 #include <iostream>
+#include <limits>
 #include <vector>
 
 #include <ros/ros.h>
@@ -14,15 +15,26 @@
 #define STOP 4
 
 // laser topic callback
-void laser_callback(const sensor_msgs::LaserScan::ConstPtr& scan, float&min_distance){
+void laser_callback(const sensor_msgs::LaserScan::ConstPtr& scan, float&min_distance) {
+    // Set an initial value for min_distance
+    min_distance = std::numeric_limits<float>::max();
+    
+    // Check the validity of scan data
+    if (scan->ranges.size() == 0) {
+        ROS_WARN("Empty laser scan data received.");
+        return;
+    }
+    
+    // Iterate through the laser scan ranges
     for (int i = 0; i < scan->ranges.size(); ++i) {
         float distance = scan->ranges[i];
 
-        if (std::isnan(distance)) 
+        if(distance < 0.2)
             continue;
 
-        if (distance < min_distance)
+        if (std::isfinite(distance) && distance < min_distance) {
             min_distance = distance;
+        }
     }
 }
 
@@ -38,23 +50,20 @@ void lane_callback(const std_msgs::Float64::ConstPtr& lane_pub, float&lane_vel){
 
 // decision direction
 int getDirection(float min_distance, float angle){
-    // distance (1m)
-    float search_distance = 1.0;
+    // distance (1.2m)
+    float search_distance = 1.2;
+
+    ROS_INFO("Object detected within %f meters", min_distance);
 
     // stop && detect object distance
-//    if (min_distance < search_distance){
-//        ROS_INFO("Object detected within %f meters", search_distance);
-//        return 4;
-//    }
-//    else{
-//        ROS_INFO("object detected within %f meters", search_distance);
-//    }
+    if(min_distance < search_distance)
+        return 4;
 
     // right && left
-    if(30 < angle && angle < 90)
-        return 3;
-    else if(270 < angle && angle < 330)
+    if(32.5 < angle && angle < 90)
         return 2;
+    else if(270 < angle && angle < 328.5)
+        return 3;
 
     return 1;
 }
@@ -65,7 +74,7 @@ double median_correction(geometry_msgs::Twist&msg, float lane){
 
 int main(int argc, char** argv) {
     geometry_msgs::Twist msg;
-    float distance = 0;
+    float min_distance = 0;
     float angle = 0;
     float lane = 0;
 
@@ -73,17 +82,17 @@ int main(int argc, char** argv) {
     ros::NodeHandle nh;
 
     // subscriber
-    ros::Subscriber sub_laser = nh.subscribe<sensor_msgs::LaserScan>("/scan", 1, boost::bind(&laser_callback, _1, boost::ref(distance)));
+    ros::Subscriber sub_laser = nh.subscribe<sensor_msgs::LaserScan>("/scan", 1, boost::bind(&laser_callback, _1, boost::ref(min_distance)));
     ros::Subscriber sub_angle = nh.subscribe<std_msgs::Float64>("/angle", 1, boost::bind(&angle_callback, _1, boost::ref(angle)));
 
     //publisher
     ros::Publisher pub_cmd_vel = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 10);
     
-    ros::Rate rate(5);
+    ros::Rate rate(1);
     while(ros::ok()){
         ros::spinOnce();
 
-        int direction = getDirection(distance, angle);
+        int direction = getDirection(min_distance, angle);
 
         if(direction == GO){
             msg.linear.x = 70;
@@ -112,7 +121,7 @@ int main(int argc, char** argv) {
             ROS_INFO("Direction Error\n");
         }
 	
-	pub_cmd_vel.publish(msg);
+	    pub_cmd_vel.publish(msg);
 
         rate.sleep();
     }
