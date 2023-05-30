@@ -18,16 +18,6 @@
 #define RIGHT 3
 #define STOP 4
 
-#define ROS_RATE 3
-#define TURN_SPEED 110
-#define DRIVE_SPEED 150
-#define TURN_TIME 30
-#define TURN_ANGLE 9
-#define LANE_MAX 100
-#define OBJECT_DISTANCE 1.3
-#define IGNORE_VALUE 10
-#define CORRECT_TIME 3
-
 // gps dataType
 struct GPS{
     double latitude;
@@ -53,8 +43,8 @@ struct Vector2 {
 void lane_callback(const std_msgs::Float64::ConstPtr& lane_pub, float&lane_vel){
     lane_vel = lane_pub->data;
     
-    if(lane_vel >= LANE_MAX)        lane_vel = LANE_MAX;
-    if(lane_vel <= (-1 * LANE_MAX)) lane_vel = (-1 * LANE_MAX);
+    if(lane_vel > 180) lane_vel = 180;
+    if(lane_vel <-180) lane_vel = -180;
 }
 
 // laser topic callback
@@ -185,7 +175,7 @@ void setDirection(std::vector<std::vector<double>>&coordinates, std::vector<int>
     for(int i = 1; i < coordinates.size() - 1; ++i){
         if(i == 1){
             directs.push_back(GO);
-            directs.push_back(GO);
+            //directs.push_back(GO);
         }
         else{
             prev = GPS(coordinates[i-1][0], coordinates[i-1][1]);
@@ -214,21 +204,8 @@ void setDirection(std::vector<std::vector<double>>&coordinates, std::vector<int>
 }
 
 // calculate cmd vel
-void correction_median(geometry_msgs::Twist&msg, float median_vel, float prev, int&timer){
-    if(median_vel * prev > 0)
-        ++timer;
-    else
-        timer = 0;
-
-    if(std::abs(prev) - std::abs(median_vel) > 100 || timer >= 3)
-        return;
-
-    msg.angular.x += median_vel/180 * 8;
-
-    if(timer == 2)
-        msg.angular.x -= median_vel/180 * 10 - median_vel/abs(median_vel) * 10;
-
-    ROS_INFO("median : %d", msg.angular.x);
+void correction_median(geometry_msgs::Twist&msg, float median_vel){
+    msg.angular.x += median_vel/180 * 10;
 }
 
 int main(int argc, char **argv) {
@@ -240,11 +217,9 @@ int main(int argc, char **argv) {
     std::vector<int> directs;
     Router router;
     float min_distance = 0;
-    float median_vel_prev = 0;
     float median_vel = 0;
     int nextPointIdx = 0;
-    int timer_direct = 0;
-    int timer_median = 0;
+    int timer = 0;
 
     GPS nextPoint(-123456789,-123456789);
     GPS currPoint(-123456789,-123456789);
@@ -255,7 +230,7 @@ int main(int argc, char **argv) {
         ));
 
     // subscribe GPS
-    ros::Subscriber fix_sub = nh.subscribe<sensor_msgs::NavSatFix>("/fix", 1, [&](
+    ros::Subscriber fix_sub = nh.subscribe<sensor_msgs::NavSatFix>("/fix", 10, [&](
         const sensor_msgs::NavSatFix::ConstPtr& msg) {
             currPoint = get_latitude_longitude(msg);
         });
@@ -265,7 +240,7 @@ int main(int argc, char **argv) {
     //publisher
     ros::Publisher pub_cmd_vel = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 10);
 
-    ros::Rate rate(ROS_RATE);
+    ros::Rate rate(1);
     while (ros::ok()) {
         ros::spinOnce();
 
@@ -286,75 +261,68 @@ int main(int argc, char **argv) {
             viewRoute(router.getCoordinates());
         }
         
-        // navigation
         if(nextPoint.latitude > 0 && nextPoint.longitude > 0){
             setNextGpsPoint(router, currPoint, nextPoint, nextPointIdx, directs, std::stoi(argv[3]));
 
             if(directs[nextPointIdx-1] == GO){
                 ROS_INFO("Go Straight");
 
-                msg.linear.x = DRIVE_SPEED;
+                msg.linear.x = 120;
                 msg.angular.x = 0;
 
-                correction_median(msg, median_vel, median_vel_prev, timer_median);
+                correction_median(msg, median_vel);
             }
-            if(directs[nextPointIdx-1] == LEFT){                                        // If, we shoud turn left or right action
-                if(0 < timer_direct && timer_direct < TURN_TIME){                       // Fist, go straight during TURN_TIME.
-                    ROS_INFO("Go Left , timer_direct : %d", timer_direct);
+            if(directs[nextPointIdx-1] == LEFT){
+                if(0 < timer && timer < 10){
+                    ROS_INFO("Go Left , timer : %d", timer);
                     
-                    msg.linear.x = TURN_SPEED;
-                    msg.angular.x = (-1 * TURN_ANGLE);
-                    ++timer_direct;
+                    msg.linear.x = 90;
+                    msg.angular.x = -13;
+                    ++timer;
                 }
-                else{                                                                   // Second, Turn Action do it.
-                    if(timer_direct >= TURN_TIME){
-                        timer_direct = 0;
-                        directs[nextPointIdx - 1] = GO;
-                    } else
-                        ++timer_direct;
+                else{
+                    if(timer >= 10)
+                        timer = 0;
+                    else
+                        ++timer;
                     
-                    ROS_INFO("Go Straight , timer_direct : %d", timer_direct);
+                    ROS_INFO("Go Straight , timer : %d", timer);
 
-                    msg.linear.x = DRIVE_SPEED;
+                    msg.linear.x = 120;
                     msg.angular.x = 0;
                     //correction_median(msg, median_vel);
                 }
             }
             if(directs[nextPointIdx-1] == RIGHT){
-                if(0 < timer_direct && timer_direct < TURN_TIME){
-                    ROS_INFO("Go Right , timer_direct : %d", timer_direct);
+                if(0 < timer && timer < 10){
+                    ROS_INFO("Go Right , timer : %d", timer);
                     
-                    msg.linear.x = TURN_SPEED;
-                    msg.angular.x = TURN_ANGLE;
-                    ++timer_direct;
+                    msg.linear.x = 90;
+                    msg.angular.x = 13;
+                    ++timer;
                 }
                 else{
-                    if(timer_direct >= TURN_TIME){
-                        timer_direct = 0;
-                        directs[nextPointIdx - 1] = GO;
-                    } else
-                        ++timer_direct;
+                    if(timer >= 10)
+                        timer = 0;
+                    else
+                        ++timer;
                     
-                    ROS_INFO("Go Straight , timer_direct : %d", timer_direct);
+                    ROS_INFO("Go Straight , timer : %d", timer);
 
-                    msg.linear.x = DRIVE_SPEED;
+                    msg.linear.x = 120;
                     msg.angular.x = 0;
                     //correction_median(msg, median_vel);
                 }
             }
-            if(min_distance <= OBJECT_DISTANCE){                                        // If near from object, stop the robot.
+            if(min_distance <= 1.5){
                 ROS_INFO("Stop");
 
                 msg.linear.x = 0;
                 msg.angular.x = 0;
-                if(0 < timer_direct)                                                    // If we was turing left or right, timer is not increase.
-                    --timer_direct;
+                if(0 < timer)
+                    --timer;
             }
         }
-
-	if(abs(median_vel_prev - median_vel) <= IGNORE_VALUE){
-        	median_vel_prev = median_vel;
-	}
         
         ROS_INFO("distance to next point : %lf", haversine(currPoint.latitude, currPoint.longitude, nextPoint.latitude, nextPoint.longitude));
         ROS_INFO("Object detected within %f meters\n", min_distance);
